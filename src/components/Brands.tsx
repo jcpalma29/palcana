@@ -12,14 +12,13 @@ import { RevealText } from "./RevealText";
 
 const LAST = brands.length - 1;
 const ZOOM = { in: 1.1, rest: 1, out: 1.2 };
-const TRANSITION = 0.9;
+const TRANSITION = 1.6;
 /**
  * Pinned pacing, in timeline units: each logo holds for HOLD before and after
  * its wipe, and every unit costs SCROLL_PER_UNIT viewport heights of scrolling.
  */
-const PIN = { hold: 1, wipe: 1.2, scrollPerUnit: 0.7 };
+const PIN = { hold: 1.5, wipe: 1.5, scrollPerUnit: 1 };
 const pinnedAt = (index: number) => index * (PIN.hold + PIN.wipe);
-const SWIPE_THRESHOLD = 50;
 /** Snap rules while pinned: commit forward early, fall back late. */
 const SNAP = { forwardAt: 0.1, backAt: 0.9, delay: 120, lerp: 0.1 };
 const ORBIT_TEXT = "Explore • Explore • Explore • ";
@@ -130,71 +129,28 @@ export function Brands() {
         };
       });
 
-      /* Touch layouts and reduced motion: brands switch in place by tap, arrows or swipe. */
-      mm.add(MEDIA.stacked, () => {
-        const duration = window.matchMedia(MEDIA.motion).matches ? TRANSITION : 0;
-        let busy = false;
-
-        gsap.set(masks, { clipPath: (index) => (index <= current.current ? CLIP.full : CLIP.hidden) });
-
+      /* Desktop with reduced motion: the list swaps brands instantly, without pinning. */
+      mm.add(MEDIA.still, () => {
+        const show = (index: number) =>
+          gsap.set(masks, { clipPath: (mask) => (mask <= index ? CLIP.full : CLIP.hidden) });
+        show(current.current);
         select.current = (next) => {
-          const previous = current.current;
-          if (busy || next === previous || next < 0 || next > LAST) return;
-          busy = true;
-          const forward = next > previous;
-          const wiped = forward ? next : previous;
-          const timeline = gsap.timeline({
-            defaults: { duration, ease: EASE.reveal },
-            onComplete: () => {
-              busy = false;
-            },
-          });
-
-          timeline
-            .to(masks[wiped], { clipPath: forward ? CLIP.full : CLIP.hidden }, 0)
-            .fromTo(
-              visuals[wiped],
-              { scale: forward ? ZOOM.in : ZOOM.rest },
-              { scale: forward ? ZOOM.rest : ZOOM.in },
-              0,
-            )
-            .fromTo(
-              visuals[forward ? previous : next],
-              { scale: forward ? ZOOM.rest : ZOOM.out },
-              { scale: forward ? ZOOM.out : ZOOM.rest },
-              0,
-            );
+          show(next);
           activate(next);
         };
+      });
 
-        if (duration) {
-          gsap.from(masks[0], {
-            clipPath: CLIP.hidden,
-            duration,
-            ease: EASE.reveal,
-            scrollTrigger: { trigger: stage, start: "top 80%", once: true },
-          });
-        }
-
-        let startX = 0;
-        let startY = 0;
-        const onTouchStart = (event: TouchEvent) => {
-          startX = event.touches[0].clientX;
-          startY = event.touches[0].clientY;
-        };
-        const onTouchEnd = (event: TouchEvent) => {
-          const dx = event.changedTouches[0].clientX - startX;
-          const dy = event.changedTouches[0].clientY - startY;
-          if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
-          select.current(current.current + (dx < 0 ? 1 : -1));
-        };
-        stage.addEventListener("touchstart", onTouchStart, { passive: true });
-        stage.addEventListener("touchend", onTouchEnd, { passive: true });
-
-        return () => {
-          stage.removeEventListener("touchstart", onTouchStart);
-          stage.removeEventListener("touchend", onTouchEnd);
-        };
+      /* Mobile: each stacked brand image wipes in as it scrolls into view. */
+      mm.add(MEDIA.mobileMotion, () => {
+        q<HTMLElement>("[data-stack-mask]").forEach((mask) => {
+          gsap
+            .timeline({
+              defaults: { duration: TRANSITION, ease: EASE.reveal },
+              scrollTrigger: { trigger: mask, start: "top 75%", once: true },
+            })
+            .fromTo(mask, { clipPath: CLIP.hidden }, { clipPath: CLIP.full }, 0)
+            .fromTo(mask.firstElementChild, { scale: ZOOM.in }, { scale: ZOOM.rest }, 0);
+        });
       });
 
       /* A circular "Explore" cursor trails the pointer across the showcase. */
@@ -229,11 +185,8 @@ export function Brands() {
 
   return (
     <section ref={root} id="brands" tabIndex={-1} aria-labelledby="brands-title" className="relative">
-      <div
-        data-pin
-        className="flex flex-col gap-8 pt-24 pb-16 lg:h-svh lg:flex-row lg:gap-0 lg:overflow-clip lg:pt-0 lg:pb-0"
-      >
-        <div className="contents lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:px-gutter lg:pt-gutter lg:pb-3">
+      <div data-pin className="pt-24 pb-16 lg:flex lg:h-svh lg:overflow-clip lg:pt-0 lg:pb-0">
+        <div className="lg:flex lg:min-w-0 lg:flex-1 lg:flex-col lg:px-gutter lg:pt-gutter lg:pb-3">
           <header className="px-gutter lg:px-0">
             <RevealText as="h2" className="text-h1">
               <span id="brands-title">
@@ -249,7 +202,39 @@ export function Brands() {
             </RevealText>
           </header>
 
-          <div className="order-last px-gutter lg:order-none lg:mt-auto lg:px-0">
+          <ol className="mt-8 flex flex-col gap-16 px-gutter lg:hidden">
+            {brands.map((brand, index) => (
+              <li key={brand.id} className="flex flex-col gap-6">
+                <DashedLine />
+                <div className="flex items-baseline gap-4">
+                  <span className="label">{brand.number}.</span>
+                  <div className="flex flex-col gap-2">
+                    <h3 className="type-sans text-h3">{brand.name}</h3>
+                    <span className="label">{brand.category.join(" / ")}</span>
+                  </div>
+                </div>
+                <a
+                  href={brand.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-stack-mask
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="block aspect-4/5 overflow-clip sm:aspect-3/2"
+                >
+                  <div className="size-full will-change-transform">
+                    <BrandShowcase brand={brand} priority={index === 0} />
+                  </div>
+                </a>
+                <p className="max-w-measure text-h4">{brand.description}</p>
+                <Button href={brand.href} variant="bracket" arrow="out" external>
+                  {brand.cta}
+                </Button>
+              </li>
+            ))}
+          </ol>
+
+          <div className="hidden lg:mt-auto lg:block">
             <div className="grid">
               {brands.map((brand, index) => (
                 <div
@@ -268,7 +253,7 @@ export function Brands() {
             </div>
           </div>
 
-          <div className="order-3 px-gutter lg:order-none lg:mt-6 lg:px-0">
+          <div className="hidden lg:mt-6 lg:block">
             <DashedLine />
             <ol>
               {brands.map((brand, index) => (
@@ -278,7 +263,7 @@ export function Brands() {
                     aria-current={active === index ? "true" : undefined}
                     aria-label={`Show ${brand.name}`}
                     onClick={() => select.current(index)}
-                    className="group flex w-full items-end justify-between gap-4 py-5 text-left opacity-30 transition-opacity duration-300 hover:opacity-70 aria-[current]:opacity-100 lg:py-6"
+                    className="group flex w-full items-end justify-between gap-4 py-6 text-left opacity-30 transition-opacity duration-300 hover:opacity-70 aria-[current]:opacity-100"
                   >
                     <span className="flex items-baseline gap-4">
                       <span className="label">{brand.number}.</span>
@@ -297,7 +282,7 @@ export function Brands() {
 
         <div
           data-stage
-          className="relative order-2 mx-gutter aspect-4/5 overflow-clip sm:aspect-3/2 lg:order-none lg:mx-0 lg:aspect-auto lg:w-3/5 group/stage data-[cursor=custom]:cursor-none"
+          className="relative hidden overflow-clip lg:block lg:w-3/5 group/stage data-[cursor=custom]:cursor-none"
         >
           {brands.map((brand, index) => (
             <a
@@ -333,31 +318,6 @@ export function Brands() {
               </text>
             </svg>
             <span className="col-start-1 row-start-1 text-h4 text-primary">↗</span>
-          </div>
-
-          <div className="label absolute right-0 bottom-0 z-10 flex items-center gap-1 bg-neutral py-1 pl-3 lg:hidden">
-            <button
-              type="button"
-              aria-label="Previous brand"
-              disabled={active === 0}
-              onClick={() => select.current(active - 1)}
-              className="group grid size-11 place-items-center disabled:opacity-30"
-            >
-              <ArrowSwap direction="left" />
-            </button>
-            <span aria-live="polite" className="tabular-nums">
-              <span className="sr-only">Brand </span>
-              {brands[active].number} / {brands[LAST].number}
-            </span>
-            <button
-              type="button"
-              aria-label="Next brand"
-              disabled={active === LAST}
-              onClick={() => select.current(active + 1)}
-              className="group grid size-11 place-items-center disabled:opacity-30"
-            >
-              <ArrowSwap direction="right" />
-            </button>
           </div>
         </div>
       </div>

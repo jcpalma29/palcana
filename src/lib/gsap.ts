@@ -12,7 +12,8 @@ export const MEDIA = {
   motion: "(prefers-reduced-motion: no-preference)",
   desktop: "(min-width: 1024px)",
   pinned: "(min-width: 1024px) and (prefers-reduced-motion: no-preference)",
-  stacked: "(max-width: 1023.98px), (prefers-reduced-motion: reduce)",
+  still: "(min-width: 1024px) and (prefers-reduced-motion: reduce)",
+  mobileMotion: "(max-width: 1023.98px) and (prefers-reduced-motion: no-preference)",
   finePointer: "(hover: hover) and (pointer: fine)",
 } as const;
 
